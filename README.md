@@ -4,7 +4,6 @@ Extract recipes from YouTube cooking videos using AI and upload them to Docmost.
 
 Built with modern Python tools: **uv**, **Typer**, and **Rich** for a beautiful CLI experience.
 
-> **Quick Start:** See [QUICK_START.md](QUICK_START.md) for a 3-minute setup guide!
 
 ## Features
 
