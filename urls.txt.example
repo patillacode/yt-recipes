@@ -1,0 +1,14 @@
+# Example YouTube URLs file for batch processing
+# Add one URL per line
+# Lines starting with # are ignored
+
+# Example URLs (replace with your own):
+# https://www.youtube.com/watch?v=VIDEO_ID_1
+# https://youtu.be/VIDEO_ID_2
+# https://www.youtube.com/watch?v=VIDEO_ID_3
+
+# You can use any YouTube URL format:
+# - youtube.com/watch?v=ID
+# - youtu.be/ID
+# - youtube.com/embed/ID
+# - youtube.com/v/ID
