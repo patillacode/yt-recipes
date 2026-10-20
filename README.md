@@ -14,17 +14,19 @@ cp .env.example .env   # then fill in RAPIDAPI_KEY and GROQ_API_KEY
 - `RAPIDAPI_KEY`: https://rapidapi.com/h0p3rwe/api/youtube-transcript3
 - `GROQ_API_KEY`: https://console.groq.com/
 - `RECIPES_DIR` (optional): folder to write notes to. Defaults to `~/syncthing/obsidian/recetas`.
+- `GROQ_MODEL` (optional): defaults to `openai/gpt-oss-120b`. Set it if Groq retires the default.
 
 ## Usage
 
 ```bash
 uv run yt-recipes process "https://youtu.be/VIDEO_ID"          # one video
 uv run yt-recipes process "URL" --preview                      # confirm before saving
-uv run yt-recipes process "URL" --dir ./out                    # write somewhere else
+uv run yt-recipes process "URL" --dir ./out                    # write somewhere else (-d)
+uv run yt-recipes process "URL" --verbose                      # debug logging (-v)
 uv run yt-recipes batch urls.txt                               # one URL per line, # comments allowed
 ```
 
-`just` shortcuts: `just run URL`, `just preview URL`, `just batch FILE`.
+`just` shortcuts: `just run URL`, `just preview URL`, `just verbose URL`, `just batch FILE`. A video can hold several recipes (compilations give many notes); `batch` works the same way, and `urls.txt.example` shows the file format.
 
 Notes are never overwritten:
 
@@ -45,7 +47,7 @@ source: "https://youtu.be/VIDEO_ID"
 raciones: "4-6"
 tiempo_total: 30          # integer minutes (upper bound of any range)
 dificultad: media         # fácil | media | difícil
-categoria: [pollo]        # list, 1-2 of: aperitivo | carne | pollo | pescado | huevos | verduras | pasta | arroz | sandwich | patatas | postre
+categoria: [pollo]        # list, every one that fits: aperitivo | carne | pollo | pescado | huevos | verduras | pasta | arroz | sandwich | patatas | postre
 electrodomestico: air-fryer   # air-fryer | horno | fuego | ninguno
 ---
 
