@@ -45,7 +45,7 @@ source: "https://youtu.be/VIDEO_ID"
 raciones: "4-6"
 tiempo_total: 30          # integer minutes (upper bound of any range)
 dificultad: media         # fácil | media | difícil
-categoria: pollo          # aperitivo | carne | pollo | pescado | huevos | verduras | pasta | arroz | sandwich | patatas | postre
+categoria: [pollo]        # list, 1-2 of: aperitivo | carne | pollo | pescado | huevos | verduras | pasta | arroz | sandwich | patatas | postre
 electrodomestico: air-fryer   # air-fryer | horno | fuego | ninguno
 ---
 

@@ -37,7 +37,7 @@ class Recipe(BaseModel):
     raciones: str
     tiempo_total: int
     dificultad: Dificultad
-    categoria: Categoria
+    categoria: list[Categoria] = Field(min_length=1)
     electrodomestico: Electrodomestico
     ingredientes: list[str]
     pasos: list[str]
@@ -71,7 +71,7 @@ Formato:
       "raciones": "número o rango, p. ej. \\"4\\" o \\"4-6\\"",
       "tiempo_total": entero en minutos (preparación + cocción, máximo si es rango),
       "dificultad": una de {list(get_args(Dificultad))},
-      "categoria": una de {list(get_args(Categoria))},
+      "categoria": lista con TODAS las que encajen, de {list(get_args(Categoria))},
       "electrodomestico": uno de {list(get_args(Electrodomestico))},
       "ingredientes": ["cantidad + ingrediente"],
       "pasos": ["paso detallado con técnica, temperatura y tiempo"],

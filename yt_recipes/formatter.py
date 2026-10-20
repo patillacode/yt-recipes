@@ -30,7 +30,7 @@ source: {_quote(source)}
 raciones: {_quote(recipe.raciones)}
 tiempo_total: {recipe.tiempo_total}
 dificultad: {recipe.dificultad}
-categoria: {recipe.categoria}
+categoria: [{", ".join(recipe.categoria)}]
 electrodomestico: {recipe.electrodomestico}
 ---
 

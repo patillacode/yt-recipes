@@ -224,7 +224,7 @@ def _preview_recipes(recipes: list[Recipe]) -> None:
     for recipe in recipes:
         table.add_row(
             recipe.nombre,
-            recipe.categoria,
+            ", ".join(recipe.categoria),
             recipe.electrodomestico,
             recipe.raciones,
             str(recipe.tiempo_total),

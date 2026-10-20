@@ -11,7 +11,7 @@ SAMPLE = {
     "raciones": "4-6",
     "tiempo_total": 30,
     "dificultad": "media",
-    "categoria": "pollo",
+    "categoria": ["pollo", "carne"],
     "electrodomestico": "air-fryer",
     "ingredientes": ["Filetes de pollo", "Pan rallado"],
     "pasos": ["Cortar el pollo", "Empanar"],
@@ -26,6 +26,7 @@ def test_render():
         "tags", "type", "created", "updated", "source", "raciones",
         "tiempo_total", "dificultad", "categoria", "electrodomestico",
     ]  # fmt: skip
+    assert "categoria: [pollo, carne]\n" in out
     assert "created: 2025-10-07" in out
     assert "tiempo_total: 30\n" in out
     for h in ("# Nuggets caseros", "## Ingredientes", "## Pasos", "## Notas"):
@@ -42,7 +43,8 @@ def test_original_section():
 @pytest.mark.parametrize(
     "field,value",
     [
-        ("categoria", "sopa"),
+        ("categoria", ["sopa"]),
+        ("categoria", []),
         ("dificultad", "muy fácil"),
         ("electrodomestico", "microondas"),
     ],
