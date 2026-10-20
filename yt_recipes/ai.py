@@ -67,7 +67,7 @@ Formato:
 {{
   "recipes": [
     {{
-      "nombre": "Nombre de la receta, solo la primera palabra en mayúscula",
+      "nombre": "Nombre completo y descriptivo, p. ej. Sándwich de atún y queso",
       "raciones": "número o rango, p. ej. \\"4\\" o \\"4-6\\"",
       "tiempo_total": entero en minutos (preparación + cocción, máximo si es rango),
       "dificultad": una de {list(get_args(Dificultad))},
@@ -80,8 +80,10 @@ Formato:
   ]
 }}
 
-Elige el valor de "categoria" por el ingrediente principal del plato (postre para dulces,
-aperitivo para picoteo, sandwich para bocadillos y panes rellenos). "electrodomestico" es
+El nombre va en minúscula salvo la primera letra y los nombres propios (Oreo, Brás).
+"categoria" incluye TODAS las que encajen: por el ingrediente principal y por el formato
+(postre para dulces, aperitivo para picoteo, sandwich para bocadillos y panes rellenos);
+p. ej. un sándwich de atún es ["sandwich", "pescado"]. "electrodomestico" es
 el aparato principal de cocción: air-fryer, horno, fuego (sartén, cazuela, vitro) o
 ninguno (sin cocción). Usa exactamente los valores de las listas.
 """

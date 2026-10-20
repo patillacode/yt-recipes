@@ -1,6 +1,6 @@
 # YouTube Recipes CLI
 
-Extract recipes from YouTube cooking videos with AI (Groq, Llama 3.3 70B) and save them as notes in an Obsidian vault. Recipes are always written in Spanish.
+Extract recipes from YouTube cooking videos with AI (Groq, `openai/gpt-oss-120b`) and save them as notes in an Obsidian vault. Recipes are always written in Spanish.
 
 ## Setup
 
