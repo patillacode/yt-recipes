@@ -22,26 +22,10 @@ class Settings(BaseSettings):
     # Groq API Configuration
     groq_api_key: str = Field(..., description="Groq API key for AI recipe extraction")
 
-    # Docmost Configuration
-    docmost_url: str = Field(
-        default="https://docmost.patilla.es", description="Docmost instance URL"
-    )
-    docmost_email: str = Field(..., description="Docmost account email")
-    docmost_password: str = Field(..., description="Docmost account password")
-    docmost_space_id: str = Field(
-        default="0199bdd6-b113-7a3d-a72a-d4001253ba70", description="Docmost space ID"
-    )
-    docmost_parent_page_id: str = Field(
-        default="0199fd11-45e0-7004-b322-30922f3f470a",
-        description="Parent page ID for recipes",
-    )
-
-    # Application Settings
-    default_language: str = Field(
-        default="es", description="Default language for recipes"
-    )
-    export_dir: Path = Field(
-        default=Path("./recipes"), description="Directory for exported recipes"
+    # Obsidian vault folder where recipes are written
+    recipes_dir: Path = Field(
+        default=Path("~/syncthing/obsidian/recetas").expanduser(),
+        description="Directory for recipe notes",
     )
 
     # API Endpoints

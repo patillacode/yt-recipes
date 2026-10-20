@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "yt-recipes-cli"
 version = "0.0.1"
-description = "Extract recipes from YouTube videos and upload to Docmost"
+description = "Extract recipes from YouTube videos and save them to an Obsidian vault"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Patilla Code", email = "patillacode@gmail.com"}
 ]
-keywords = ["youtube", "recipes", "cli", "docmost", "ai", "groq"]
+keywords = ["youtube", "recipes", "cli", "obsidian", "ai", "groq"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

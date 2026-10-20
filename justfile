@@ -26,11 +26,6 @@ test-install:
     @echo "Testing installation..."
     uv run yt-recipes version
 
-# Test Docmost login
-test-docmost:
-    @echo "Testing Docmost login..."
-    uv run python test_docmost_login.py
-
 # Run the CLI with a URL (usage: just run "https://youtube.com/...")
 run URL:
     uv run yt-recipes process "{{URL}}"

@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from typing import Literal, get_args
 
 import httpx
 from pydantic import BaseModel, Field
@@ -12,25 +13,78 @@ from .config import Settings
 logger = logging.getLogger("yt_recipes")
 
 
+Dificultad = Literal["fácil", "media", "difícil"]
+Categoria = Literal[
+    "aperitivo",
+    "carne",
+    "pollo",
+    "pescado",
+    "huevos",
+    "verduras",
+    "pasta",
+    "arroz",
+    "sandwich",
+    "patatas",
+    "postre",
+]
+Electrodomestico = Literal["air-fryer", "horno", "fuego", "ninguno"]
+
+
 class Recipe(BaseModel):
     """Recipe data model."""
 
-    name: str
-    icon: str = "🍽️"
-    servings: str
-    prep_time: str
-    cook_time: str
-    total_time: str
-    difficulty: str
-    ingredients: list[str]
-    instructions: list[str]
-    notes: list[str] = Field(default_factory=list)
+    nombre: str
+    raciones: str
+    tiempo_total: int
+    dificultad: Dificultad
+    categoria: Categoria
+    electrodomestico: Electrodomestico
+    ingredientes: list[str]
+    pasos: list[str]
+    notas: list[str] = Field(default_factory=list)
+    original: str | None = None
 
 
 class RecipeExtractionResponse(BaseModel):
     """Response model for recipe extraction."""
 
     recipes: list[Recipe]
+
+
+SYSTEM_PROMPT = f"""
+Eres un instructor de cocina experto que extrae recetas detalladas de transcripciones
+de vídeos. Tu tarea:
+
+1. Identifica TODAS las recetas de comida mencionadas en la transcripción.
+2. Tradúcelas al español si están en otro idioma.
+3. Extrae los detalles COMPLETOS: cantidades exactas de cada ingrediente (nunca omitas
+   cantidades), temperaturas y tiempos precisos, pasos detallados, y consejos,
+   advertencias y variantes como notas.
+4. Devuelve SOLO JSON válido, sin texto adicional. Si no hay recetas, devuelve
+   {{"recipes": []}}.
+
+Formato:
+{{
+  "recipes": [
+    {{
+      "nombre": "Nombre de la receta, solo la primera palabra en mayúscula",
+      "raciones": "número o rango, p. ej. \\"4\\" o \\"4-6\\"",
+      "tiempo_total": entero en minutos (preparación + cocción, máximo si es rango),
+      "dificultad": una de {list(get_args(Dificultad))},
+      "categoria": una de {list(get_args(Categoria))},
+      "electrodomestico": uno de {list(get_args(Electrodomestico))},
+      "ingredientes": ["cantidad + ingrediente"],
+      "pasos": ["paso detallado con técnica, temperatura y tiempo"],
+      "notas": ["consejo, variante u observación importante"]
+    }}
+  ]
+}}
+
+Elige el valor de "categoria" por el ingrediente principal del plato (postre para dulces,
+aperitivo para picoteo, sandwich para bocadillos y panes rellenos). "electrodomestico" es
+el aparato principal de cocción: air-fryer, horno, fuego (sartén, cazuela, vitro) o
+ninguno (sin cocción). Usa exactamente los valores de las listas.
+"""
 
 
 class RecipeExtractorError(Exception):
@@ -41,16 +95,6 @@ class RecipeExtractorError(Exception):
 
 class RecipeExtractor:
     """Extract recipes from video transcripts using Groq AI."""
-
-    # Language-specific system prompts
-    LANGUAGE_PROMPTS = {
-        "es": "español",
-        "en": "English",
-        "fr": "français",
-        "de": "Deutsch",
-        "it": "italiano",
-        "pt": "português",
-    }
 
     def __init__(self, settings: Settings):
         """
@@ -68,13 +112,12 @@ class RecipeExtractor:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.client.close()
 
-    def extract(self, transcript: str, language: str = "es") -> list[Recipe]:
+    def extract(self, transcript: str) -> list[Recipe]:
         """
         Extract recipes from transcript using Groq AI.
 
         Args:
             transcript: Video transcript text
-            language: Target language code (es, en, fr, de, it, pt)
 
         Returns:
             list of extracted recipes
@@ -82,21 +125,20 @@ class RecipeExtractor:
         Raises:
             RecipeExtractorError: If extraction fails
         """
-        system_prompt = self._build_system_prompt(language)
-
         payload = {
             "model": self.settings.groq_model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": (
-                        f"Extract all recipes from this transcript:\n\n{transcript}"
+                        f"Extrae todas las recetas de esta transcripción:\n\n{transcript}"
                     ),
                 },
             ],
             "temperature": 0.2,
             "max_tokens": 8000,
+            "response_format": {"type": "json_object"},
         }
 
         headers = {
@@ -104,7 +146,7 @@ class RecipeExtractor:
             "Content-Type": "application/json",
         }
 
-        logger.debug(f"Sending transcript to Groq API (language: {language})")
+        logger.debug("Sending transcript to Groq API")
 
         try:
             response = self.client.post(
@@ -124,68 +166,6 @@ class RecipeExtractor:
 
         logger.info(f"Extracted {len(recipes)} recipe(s)")
         return recipes
-
-    def _build_system_prompt(self, language: str) -> str:
-        """
-        Build system prompt for recipe extraction.
-
-        Args:
-            language: Target language code
-
-        Returns:
-            System prompt text
-        """
-        target_language = self.LANGUAGE_PROMPTS.get(language, "español")
-
-        # Build translation instruction
-        if language != "en":
-            translation_text = (
-                f"2. Translate them to {target_language} if they are in another language"
-            )
-        else:
-            translation_text = (
-                "2. Keep them in the original language if already in English, "
-                "otherwise translate to English"
-            )
-
-        return f"""
-You are an expert culinary instructor who extracts detailed, professional recipes from
-video transcripts. Your task:
-
-1. Identify ALL food recipes mentioned in the transcript
-{translation_text}
-3. Extract COMPLETE details including:
-   - Exact ingredient quantities (never omit amounts)
-   - Precise cooking temperatures and times
-   - Detailed step-by-step instructions
-   - Important tips, warnings, and variations
-4. Return ONLY valid JSON with no additional text
-5. If no recipes found, return empty array
-
-IMPORTANT:
-- Be thorough with measurements and times
-- Include every ingredient mentioned
-- Break complex steps into smaller, clear actions
-- Add helpful notes about technique or substitutions
-- Specify equipment when relevant (air fryer, oven, etc.)
-
-Return format:
-{{
-  "recipes": [
-    {{
-      "name": "Recipe Name in {target_language}",
-      "icon": "appropriate emoji (🍕🍝🥘🍖🥗🍰🧁🍪🥐🌮🍜🍛🥟🍱)",
-      "servings": "number or range",
-      "prep_time": "X minutes",
-      "cook_time": "X minutes",
-      "total_time": "X minutes",
-      "difficulty": "Easy/Medium/Hard",
-      "ingredients": ["quantity + ingredient with details"],
-      "instructions": ["detailed step with specific technique"],
-      "notes": ["tip, variation, or important observation"]
-    }}
-  ]
-}}"""
 
     def _parse_response(self, content: str) -> list[Recipe]:
         """
@@ -221,19 +201,16 @@ Return format:
         return response.recipes
 
 
-def extract_recipes(
-    transcript: str, settings: Settings, language: str = "es"
-) -> list[Recipe]:
+def extract_recipes(transcript: str, settings: Settings) -> list[Recipe]:
     """
     Convenience function to extract recipes.
 
     Args:
         transcript: Video transcript
         settings: Application settings
-        language: Target language code
 
     Returns:
         List of recipes
     """
     with RecipeExtractor(settings) as extractor:
-        return extractor.extract(transcript, language)
+        return extractor.extract(transcript)

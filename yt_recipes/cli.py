@@ -10,40 +10,20 @@ from rich.table import Table
 from . import __version__
 from .ai import Recipe, RecipeExtractor, RecipeExtractorError
 from .config import Settings, get_settings
-from .docmost import DocmostClient, DocmostError
-from .formatter import RecipeFormatter
-from .utils import console, ensure_directory, sanitize_filename, setup_logging
+from .formatter import filename, render
+from .utils import console, ensure_directory, setup_logging
 from .youtube import TranscriptFetcher, VideoIDExtractor, YouTubeError
 
 app = typer.Typer(
     name="yt-recipes",
-    help="Extract recipes from YouTube videos and upload to Docmost",
+    help="Extract recipes from YouTube videos and save them to an Obsidian vault",
     add_completion=False,
 )
 
 
-@app.command()
-def process(
-    url: str = typer.Argument(..., help="YouTube video URL"),
-    language: str | None = typer.Option(
-        None, "--language", "-l", help="Target language code (es, en, fr, de, it, pt)"
-    ),
-    preview: bool = typer.Option(
-        False, "--preview", "-p", help="Preview recipes before uploading"
-    ),
-    export_dir: Path | None = typer.Option(
-        None, "--export-dir", "-e", help="Export recipes to local directory"
-    ),
-    no_upload: bool = typer.Option(
-        False, "--no-upload", help="Skip uploading to Docmost (only export locally)"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
-):
-    """Process a single YouTube URL and extract recipes."""
-    logger = setup_logging(verbose)
-
+def _load_settings() -> Settings:
     try:
-        settings = get_settings()
+        return get_settings()
     except Exception as exc:
         console.print(f"[red]Error loading settings: {exc}[/red]")
         console.print(
@@ -51,74 +31,102 @@ def process(
         )
         raise typer.Exit(1) from exc
 
-    # Use settings defaults if not provided
-    target_language = language or settings.default_language
-    export_path = export_dir or (settings.export_dir if export_dir is not None else None)
+
+def _source(video_id: str) -> str:
+    return f"https://youtu.be/{video_id}"
+
+
+def _already_imported(recipes_dir: Path, video_id: str) -> bool:
+    """True if a note in recipes_dir already has this video as its source."""
+    marker = f'source: "{_source(video_id)}'
+    return any(
+        marker in path.read_text(encoding="utf-8")[:600]
+        for path in recipes_dir.glob("*.md")
+    )
+
+
+def _write_recipes(recipes: list[Recipe], video_id: str, recipes_dir: Path) -> list[Path]:
+    """Write one note per recipe. Never overwrites: name clashes get a ' (n)' suffix."""
+    ensure_directory(recipes_dir)
+    written = []
+    for recipe in recipes:
+        content = render(recipe, _source(video_id))
+        stem = filename(recipe.nombre).removesuffix(".md")
+        n = 1
+        while True:
+            path = recipes_dir / (f"{stem}.md" if n == 1 else f"{stem} ({n}).md")
+            try:
+                with open(path, "x", encoding="utf-8") as f:
+                    f.write(content)
+            except FileExistsError:
+                n += 1
+                continue
+            break
+        written.append(path)
+    return written
+
+
+def _extract(url: str, settings: Settings, recipes_dir: Path):
+    """Fetch and extract. Returns (video_id, recipes), or None if already imported."""
+    video_id = VideoIDExtractor.extract(url)
+    if recipes_dir.exists() and _already_imported(recipes_dir, video_id):
+        console.print(f"[yellow]Skipped: {video_id} is already in {recipes_dir}[/yellow]")
+        return None
+    with TranscriptFetcher(settings) as fetcher:
+        transcript = fetcher.fetch(video_id)
+    with RecipeExtractor(settings) as extractor:
+        return video_id, extractor.extract(transcript)
+
+
+@app.command()
+def process(
+    url: str = typer.Argument(..., help="YouTube video URL"),
+    preview: bool = typer.Option(
+        False, "--preview", "-p", help="Preview recipes before saving"
+    ),
+    dir: Path | None = typer.Option(
+        None, "--dir", "-d", help="Recipes folder (default: RECIPES_DIR setting)"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+):
+    """Process a single YouTube URL and save its recipes to the vault."""
+    logger = setup_logging(verbose)
+    settings = _load_settings()
+    recipes_dir = (dir or settings.recipes_dir).expanduser()
 
     console.print(
         Panel.fit(
             f"[bold cyan]YouTube Recipes Extractor v{__version__}[/bold cyan]\n"
-            f"Target Language: [green]{target_language}[/green]",
+            f"Saving to: [green]{recipes_dir}[/green]",
             border_style="cyan",
         )
     )
 
     try:
-        # Step 1: Extract video ID
-        console.print("\n[bold]Step 1:[/bold] Extracting video ID...")
-        video_id = VideoIDExtractor.extract(url)
-        console.print(f"[green]✓[/green] Video ID: [cyan]{video_id}[/cyan]")
-
-        # Step 2: Fetch transcript
-        console.print("\n[bold]Step 2:[/bold] Fetching transcript...")
-        with TranscriptFetcher(settings) as fetcher:
-            transcript = fetcher.fetch(video_id)
-        console.print(
-            f"[green]✓[/green] Transcript fetched ({len(transcript)} characters)"
-        )
-
-        # Step 3: Extract recipes
-        console.print(
-            f"\n[bold]Step 3:[/bold] Extracting recipes (language: {target_language})..."
-        )
-        with RecipeExtractor(settings) as extractor:
-            recipes = extractor.extract(transcript, target_language)
+        console.print("\n[bold]Extracting recipes...[/bold]")
+        result = _extract(url, settings, recipes_dir)
+        if result is None:
+            raise typer.Exit(0)
+        video_id, recipes = result
 
         if not recipes:
             console.print("[yellow]No recipes found in this video.[/yellow]")
             raise typer.Exit(0)
-
         console.print(f"[green]✓[/green] Found {len(recipes)} recipe(s)")
 
-        # Step 4: Format recipes
-        console.print("\n[bold]Step 4:[/bold] Formatting recipes...")
-        formatted_recipes = RecipeFormatter.format_batch(recipes, video_id, url)
-        console.print(f"[green]✓[/green] Formatted {len(formatted_recipes)} recipe(s)")
-
-        # Step 5: Preview (if requested)
         if preview:
             _preview_recipes(recipes)
-            if not Confirm.ask(
-                "\n[bold]Proceed with upload/export?[/bold]", default=True
-            ):
+            if not Confirm.ask("\n[bold]Save these recipes?[/bold]", default=True):
                 console.print("[yellow]Operation cancelled.[/yellow]")
                 raise typer.Exit(0)
 
-        # Step 6: Export to local files (if requested)
-        if export_path:
-            console.print(f"\n[bold]Step 5:[/bold] Exporting to {export_path}...")
-            _export_recipes(formatted_recipes, export_path)
-            console.print(f"[green]✓[/green] Exported {len(formatted_recipes)} recipe(s)")
-
-        # Step 7: Upload to Docmost (unless disabled)
-        if not no_upload:
-            console.print("\n[bold]Step 6:[/bold] Uploading to Docmost...")
-            _upload_recipes(formatted_recipes, settings)
-            console.print(f"[green]✓[/green] Uploaded {len(formatted_recipes)} recipe(s)")
-
+        for path in _write_recipes(recipes, video_id, recipes_dir):
+            console.print(f"[green]✓[/green] {path.name}")
         console.print("\n[bold green]✓ Done![/bold green]")
 
-    except (YouTubeError, RecipeExtractorError, DocmostError) as exc:
+    except typer.Exit:
+        raise
+    except (YouTubeError, RecipeExtractorError) as exc:
         console.print(f"\n[red]Error: {exc}[/red]")
         raise typer.Exit(1) from exc
     except KeyboardInterrupt as exc:
@@ -135,38 +143,20 @@ def batch(
     file_path: Path = typer.Argument(
         ..., help="File containing YouTube URLs (one per line)"
     ),
-    language: str | None = typer.Option(
-        None, "--language", "-l", help="Target language code (es, en, fr, de, it, pt)"
-    ),
-    preview: bool = typer.Option(
-        False, "--preview", "-p", help="Preview recipes before uploading"
-    ),
-    export_dir: Path | None = typer.Option(
-        None, "--export-dir", "-e", help="Export recipes to local directory"
-    ),
-    no_upload: bool = typer.Option(
-        False, "--no-upload", help="Skip uploading to Docmost (only export locally)"
+    dir: Path | None = typer.Option(
+        None, "--dir", "-d", help="Recipes folder (default: RECIPES_DIR setting)"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
 ):
     """Process multiple YouTube URLs from a file."""
     logger = setup_logging(verbose)
+    settings = _load_settings()
+    recipes_dir = (dir or settings.recipes_dir).expanduser()
 
-    try:
-        settings = get_settings()
-    except Exception as exc:
-        console.print(f"[red]Error loading settings: {exc}[/red]")
-        console.print(
-            "[yellow]Make sure .env file exists with all required variables.[/yellow]"
-        )
-        raise typer.Exit(1) from exc
-
-    # Read URLs from file
     if not file_path.exists():
         console.print(f"[red]File not found: {file_path}[/red]")
         raise typer.Exit(1)
 
-    urls = []
     with open(file_path) as f:
         urls = [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
@@ -177,56 +167,35 @@ def batch(
     console.print(
         Panel.fit(
             f"[bold cyan]YouTube Recipes Batch Processor v{__version__}[/bold cyan]\n"
-            f"Processing: [green]{len(urls)}[/green] URL(s)",
+            f"Processing: [green]{len(urls)}[/green] URL(s) -> "
+            f"[green]{recipes_dir}[/green]",
             border_style="cyan",
         )
     )
-
-    target_language = language or settings.default_language
-    export_path = export_dir or (settings.export_dir if export_dir is not None else None)
 
     total_recipes = 0
     failed_urls = []
 
     for idx, url in enumerate(urls, 1):
         console.print(f"\n[bold cyan]Processing URL {idx}/{len(urls)}:[/bold cyan] {url}")
-
         try:
-            # Extract, fetch, and process
-            video_id = VideoIDExtractor.extract(url)
-
-            with TranscriptFetcher(settings) as fetcher:
-                transcript = fetcher.fetch(video_id)
-
-            with RecipeExtractor(settings) as extractor:
-                recipes = extractor.extract(transcript, target_language)
-
+            result = _extract(url, settings, recipes_dir)
+            if result is None:
+                continue
+            video_id, recipes = result
             if not recipes:
                 console.print("[yellow]  No recipes found[/yellow]")
                 continue
-
-            formatted_recipes = RecipeFormatter.format_batch(recipes, video_id, url)
-
-            # Export if requested
-            if export_path:
-                _export_recipes(formatted_recipes, export_path)
-
-            # Upload if not disabled
-            if not no_upload:
-                _upload_recipes(formatted_recipes, settings)
-
+            _write_recipes(recipes, video_id, recipes_dir)
             total_recipes += len(recipes)
-            console.print(f"[green]  ✓ Processed {len(recipes)} recipe(s)[/green]")
-
+            console.print(f"[green]  ✓ Saved {len(recipes)} recipe(s)[/green]")
         except Exception as e:
             logger.error(f"Failed to process {url}: {e}")
             console.print(f"[red]  ✗ Failed: {e}[/red]")
             failed_urls.append(url)
 
-    # Summary
     console.print("\n[bold green]Batch processing complete![/bold green]")
-    console.print(f"Total recipes processed: [cyan]{total_recipes}[/cyan]")
-
+    console.print(f"Total recipes saved: [cyan]{total_recipes}[/cyan]")
     if failed_urls:
         console.print(f"\n[yellow]Failed URLs ({len(failed_urls)}):[/yellow]")
         for url in failed_urls:
@@ -244,50 +213,27 @@ def version():
 def _preview_recipes(recipes: list[Recipe]) -> None:
     """Display recipe preview in a table."""
     table = Table(title="Extracted Recipes", show_header=True, header_style="bold cyan")
-    table.add_column("Icon", style="cyan", width=6)
-    table.add_column("Name", style="green")
-    table.add_column("Servings", style="yellow")
-    table.add_column("Time", style="magenta")
-    table.add_column("Difficulty", style="blue")
-    table.add_column("Ingredients", style="white")
+    table.add_column("Nombre", style="green")
+    table.add_column("Categoría", style="cyan")
+    table.add_column("Aparato", style="magenta")
+    table.add_column("Raciones", style="yellow")
+    table.add_column("Min", style="magenta")
+    table.add_column("Dificultad", style="blue")
+    table.add_column("Ingredientes", style="white")
 
     for recipe in recipes:
         table.add_row(
-            recipe.icon,
-            recipe.name,
-            recipe.servings,
-            recipe.total_time,
-            recipe.difficulty,
-            str(len(recipe.ingredients)),
+            recipe.nombre,
+            recipe.categoria,
+            recipe.electrodomestico,
+            recipe.raciones,
+            str(recipe.tiempo_total),
+            recipe.dificultad,
+            str(len(recipe.ingredientes)),
         )
 
     console.print("\n")
     console.print(table)
-
-
-def _export_recipes(formatted_recipes: list[dict], export_dir: Path) -> None:
-    """Export recipes to local markdown files."""
-    ensure_directory(export_dir)
-
-    for recipe_data in formatted_recipes:
-        filename = sanitize_filename(recipe_data["title"]) + ".md"
-        file_path = export_dir / filename
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(recipe_data["content"])
-
-
-def _upload_recipes(formatted_recipes: list[dict], settings: Settings) -> None:
-    """Upload recipes to Docmost."""
-    with DocmostClient(settings) as client:
-        client.login()
-
-        for recipe_data in formatted_recipes:
-            client.upload_recipe(
-                title=recipe_data["title"],
-                content=recipe_data["content"],
-                icon=recipe_data["icon"],
-            )
 
 
 if __name__ == "__main__":

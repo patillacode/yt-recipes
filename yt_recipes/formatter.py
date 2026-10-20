@@ -1,113 +1,57 @@
-"""Recipe formatting to markdown."""
+"""Recipe rendering to Obsidian markdown."""
 
-from typing import List
+from datetime import date
 
 from .ai import Recipe
+from .utils import sanitize_filename
 
 
-class RecipeFormatter:
-    """Format recipes as markdown documents."""
+def _quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-    @staticmethod
-    def format(recipe: Recipe, video_id: str, youtube_url: str = None) -> str:
-        """
-        Format a recipe as markdown.
 
-        Args:
-            recipe: Recipe object to format
-            video_id: YouTube video ID
-            youtube_url: Full YouTube URL (optional, will be constructed if not provided)
+def render(recipe: Recipe, source: str, created: date | None = None) -> str:
+    """Render a recipe as a note with frontmatter, matching the vault's recetas format."""
+    today = date.today()
+    created = created or today
 
-        Returns:
-            Formatted markdown string
-        """
-        if youtube_url is None:
-            youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+    ingredientes = "\n".join(
+        i if i.startswith("#") else f"- {i}" for i in recipe.ingredientes
+    )
+    pasos = "\n".join(f"{n}. {p}" for n, p in enumerate(recipe.pasos, 1))
+    notas = "\n".join(f"- {n}" for n in recipe.notas) or "- Ninguna"
 
-        # Build ingredients list
-        ingredients_md = "\n".join(f"- {ing}" for ing in recipe.ingredients)
+    out = f"""---
+tags: [recetas]
+type: recipe
+created: {created.isoformat()}
+updated: {today.isoformat()}
+source: {_quote(source)}
+raciones: {_quote(recipe.raciones)}
+tiempo_total: {recipe.tiempo_total}
+dificultad: {recipe.dificultad}
+categoria: {recipe.categoria}
+electrodomestico: {recipe.electrodomestico}
+---
 
-        # Build instructions list
-        instructions_md = "\n".join(
-            f"{idx + 1}. {step}" for idx, step in enumerate(recipe.instructions)
-        )
+# {recipe.nombre}
 
-        # Build notes list
-        if recipe.notes and len(recipe.notes) > 0:
-            notes_md = "\n".join(f"- {note}" for note in recipe.notes)
-        else:
-            notes_md = "- None"
+## Ingredientes
 
-        # Construct markdown
-        markdown = f"""# {recipe.name}
+{ingredientes}
 
-**Servings:** {recipe.servings}
-**Time:** {recipe.prep_time} preparation + {recipe.cook_time} cooking (total: {recipe.total_time})
-**Difficulty:** {recipe.difficulty}
-**Link:** [YouTube]({youtube_url})
+## Pasos
 
-## Ingredients
+{pasos}
 
-{ingredients_md}
+## Notas
 
-## Instructions
-
-{instructions_md}
-
-## Notes
-
-{notes_md}
+{notas}
 """
-
-        return markdown
-
-    @staticmethod
-    def format_batch(
-        recipes: list[Recipe], video_id: str, youtube_url: str = ""
-    ) -> list[dict]:
-        """
-        Format multiple recipes.
-
-        Args:
-            recipes: List of Recipe objects
-            video_id: YouTube video ID
-            youtube_url: Full YouTube URL (optional)
-
-        Returns:
-            List of dicts with title, icon, content, and video_id
-        """
-        formatted = []
-
-        for recipe in recipes:
-            markdown = RecipeFormatter.format(recipe, video_id, youtube_url)
-            formatted.append(
-                {
-                    "title": recipe.name,
-                    "icon": recipe.icon or "🍽️",
-                    "content": markdown,
-                    "video_id": video_id,
-                }
-            )
-
-        return formatted
+    if recipe.original:
+        out += f"\n## Original\n\n{recipe.original.strip()}\n"
+    return out
 
 
-def format_recipe(recipe: Recipe, video_id: str, youtube_url: str = "") -> dict:
-    """
-    Convenience function to format a single recipe.
-
-    Args:
-        recipe: Recipe object
-        video_id: YouTube video ID
-        youtube_url: Full YouTube URL
-
-    Returns:
-        Dict with title, icon, content, video_id
-    """
-    markdown = RecipeFormatter.format(recipe, video_id, youtube_url)
-    return {
-        "title": recipe.name,
-        "icon": recipe.icon or "🍽️",
-        "content": markdown,
-        "video_id": video_id,
-    }
+def filename(title: str) -> str:
+    return sanitize_filename(title) + ".md"
